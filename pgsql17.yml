@@ -1,0 +1,113 @@
+---
+- name: Install PostgreSQL 17 on Oracle Linux 8
+  hosts: all
+  become: yes
+  vars:
+    postgres_password: "random_password"  # Define the password for the postgres user
+    pgsql_data_dir: "/var/lib/pgsql/17/data/"  # Define the PostgreSQL data directory
+
+  tasks:
+
+    # Stop firewalld service to temporarily disable the firewall and allow remote connections.
+    - name: Stop firewalld service
+      ansible.builtin.service:
+        name: firewalld
+        state: stopped
+
+    # Disable firewalld service to prevent it from starting on boot, ensuring that the PostgreSQL server can accept external connections.
+    - name: Disable firewalld service
+      ansible.builtin.service:
+        name: firewalld
+        enabled: no
+
+    # Import the PostgreSQL GPG key to verify the integrity of downloaded packages.
+    - name: Import GPG key for PostgreSQL packages
+      ansible.builtin.rpm_key:
+        state: present
+        key: https://download.postgresql.org/pub/repos/yum/keys/RPM-GPG-KEY-PGDG
+
+    # Add an alternative GPG key for Red Hat-based distributions to ensure compatibility.
+    - name: Import GPG key for PostgreSQL packages (RHEL)
+      ansible.builtin.rpm_key:
+        state: present
+        key: https://download.postgresql.org/pub/repos/yum/keys/PGDG-RPM-GPG-KEY-RHEL
+
+    # Install both PostgreSQL 17 server and python3-psycopg2 in one task
+    - name: Install PostgreSQL 17 server and python3-psycopg2
+      ansible.builtin.dnf:
+        name:
+          - postgresql17-server
+          - python3-psycopg2
+        state: present
+
+    # Initialize the PostgreSQL database in the data directory.
+    # This task will ignore errors if the data directory already exists.
+    - name: Initialize the PostgreSQL database
+      ansible.builtin.command:
+        cmd: /usr/pgsql-17/bin/postgresql-17-setup initdb
+      ignore_errors: yes  # Ignore errors if the data directory already exists from a previous run.
+
+    # Create backups of PostgreSQL configuration files with preserved permissions and ownership.
+    - name: Backup PostgreSQL configuration files with original permissions and ownership
+      ansible.builtin.command:
+        cmd: "cp --preserve=all {{ pgsql_data_dir }}{{ item }} {{ pgsql_data_dir }}{{ item }}.orig"
+      with_items:
+        - pg_hba.conf
+        - pg_ident.conf
+        - postgresql.conf
+
+    # Edit pg_hba.conf to allow remote connections from any IP (0.0.0.0/0) using MD5 authentication.
+    - name: Edit pg_hba.conf to allow remote connections
+      ansible.builtin.lineinfile:
+        path: "{{ pgsql_data_dir }}pg_hba.conf"
+        regexp: '^#host'
+        line: 'host    all             all             0.0.0.0/0            md5'
+        state: present
+
+    # Update the PostgreSQL configuration (postgresql.conf) with optimized settings and allow listening on all IPs (0.0.0.0).
+    # Existing lines are updated, and new ones are added if they do not already exist.
+    - name: Update postgresql.conf settings
+      ansible.builtin.lineinfile:
+        path: "{{ pgsql_data_dir }}postgresql.conf"
+        regexp: "{{ item.regexp }}"
+        line: "{{ item.line }}"
+        state: present
+      loop:
+        - { regexp: '^#?listen_addresses', line: "listen_addresses = '*'" }
+        - { regexp: '^#?max_connections', line: 'max_connections = 300' }
+        - { regexp: '^#?shared_buffers', line: 'shared_buffers = 4GB' }
+        - { regexp: '^#?effective_cache_size', line: 'effective_cache_size = 12GB' }
+        - { regexp: '^#?maintenance_work_mem', line: 'maintenance_work_mem = 1GB' }
+        - { regexp: '^#?checkpoint_completion_target', line: 'checkpoint_completion_target = 0.9' }
+        - { regexp: '^#?wal_buffers', line: 'wal_buffers = 16MB' }
+        - { regexp: '^#?default_statistics_target', line: 'default_statistics_target = 100' }
+        - { regexp: '^#?random_page_cost', line: 'random_page_cost = 1.1' }
+        - { regexp: '^#?effective_io_concurrency', line: 'effective_io_concurrency = 200' }
+        - { regexp: '^#?work_mem', line: 'work_mem = 6990kB' }
+        - { regexp: '^#?huge_pages', line: 'huge_pages = off' }
+        - { regexp: '^#?min_wal_size', line: 'min_wal_size = 1GB' }
+        - { regexp: '^#?max_wal_size', line: 'max_wal_size = 4GB' }
+        - { regexp: '^#?max_worker_processes', line: 'max_worker_processes = 4' }
+        - { regexp: '^#?max_parallel_workers_per_gather', line: 'max_parallel_workers_per_gather = 2' }
+        - { regexp: '^#?max_parallel_workers', line: 'max_parallel_workers = 4' }
+        - { regexp: '^#?max_parallel_maintenance_workers', line: 'max_parallel_maintenance_workers = 2' }
+
+    # Enable the PostgreSQL service to start on system boot.
+    - name: Enable PostgreSQL service
+      ansible.builtin.service:
+        name: postgresql-17
+        enabled: yes
+
+    # Start the PostgreSQL service to apply all configurations and make the database accessible.
+    - name: Start PostgreSQL service
+      ansible.builtin.service:
+        name: postgresql-17
+        state: started
+
+    # Set the postgres user password using bash after the PostgreSQL server has started.
+    - name: Set the postgres user password using bash
+      ansible.builtin.shell: |
+        PGPASSWORD={{ postgres_password }} psql -U postgres -d postgres -c "ALTER USER postgres WITH PASSWORD '{{ postgres_password }}';"
+      environment:
+        PGPASSWORD: "{{ postgres_password }}"
+      become_user: postgres

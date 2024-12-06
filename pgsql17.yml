@@ -47,7 +47,7 @@
         cmd: /usr/pgsql-17/bin/postgresql-17-setup initdb
       ignore_errors: yes  # Ignore errors if the data directory already exists from a previous run.
 
-    # Create backups of PostgreSQL configuration files with preserved permissions and ownership.
+    # Create backups of PostgreSQL configuration files with preserved permissions and ownership before making changes.
     - name: Backup PostgreSQL configuration files with original permissions and ownership
       ansible.builtin.command:
         cmd: "cp --preserve=all {{ pgsql_data_dir }}{{ item }} {{ pgsql_data_dir }}{{ item }}.orig"
@@ -56,7 +56,7 @@
         - pg_ident.conf
         - postgresql.conf
 
-    # Edit pg_hba.conf to allow remote connections from any IP (0.0.0.0/0) using MD5 authentication.
+    # Update pg_hba.conf to allow remote connections from any IP (0.0.0.0/0) using MD5 authentication.
     - name: Edit pg_hba.conf to allow remote connections
       ansible.builtin.lineinfile:
         path: "{{ pgsql_data_dir }}pg_hba.conf"

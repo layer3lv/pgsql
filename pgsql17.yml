@@ -1,4 +1,7 @@
 ---
+# Playbook to install PostgreSQL 17 on Oracle Linux 8
+# Includes repository setup, installation, configuration, and service management.
+
 - name: Install PostgreSQL 17 on Oracle Linux 8
   hosts: all
   become: yes
@@ -7,7 +10,6 @@
     pgsql_data_dir: "/var/lib/pgsql/17/data/"  # Define the PostgreSQL data directory
 
   tasks:
-
     # Stop firewalld service to temporarily disable the firewall and allow remote connections.
     - name: Stop firewalld service
       ansible.builtin.service:
@@ -32,7 +34,13 @@
         state: present
         key: https://download.postgresql.org/pub/repos/yum/keys/PGDG-RPM-GPG-KEY-RHEL
 
-    # Install both PostgreSQL 17 server and python3-psycopg2 in one task
+    # Install the repository RPM for PostgreSQL.
+    - name: Install the repository RPM
+      ansible.builtin.yum:
+        name: https://download.postgresql.org/pub/repos/yum/reporpms/EL-8-x86_64/pgdg-redhat-repo-latest.noarch.rpm
+        state: present
+
+    # Install both PostgreSQL 17 server and python3-psycopg2 in one task.
     - name: Install PostgreSQL 17 server and python3-psycopg2
       ansible.builtin.dnf:
         name:
@@ -47,7 +55,7 @@
         cmd: /usr/pgsql-17/bin/postgresql-17-setup initdb
       ignore_errors: yes  # Ignore errors if the data directory already exists from a previous run.
 
-    # Create backups of PostgreSQL configuration files with preserved permissions and ownership before making changes.
+    # Create backups of PostgreSQL configuration files with preserved permissions and ownership.
     - name: Backup PostgreSQL configuration files with original permissions and ownership
       ansible.builtin.command:
         cmd: "cp --preserve=all {{ pgsql_data_dir }}{{ item }} {{ pgsql_data_dir }}{{ item }}.orig"
@@ -56,7 +64,7 @@
         - pg_ident.conf
         - postgresql.conf
 
-    # Update pg_hba.conf to allow remote connections from any IP (0.0.0.0/0) using MD5 authentication.
+    # Edit pg_hba.conf to allow remote connections from any IP (0.0.0.0/0) using MD5 authentication.
     - name: Edit pg_hba.conf to allow remote connections
       ansible.builtin.lineinfile:
         path: "{{ pgsql_data_dir }}pg_hba.conf"

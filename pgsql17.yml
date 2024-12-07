@@ -6,7 +6,7 @@
   hosts: all
   become: yes
   vars:
-    postgres_password: "random_password"  # Define the password for the postgres user
+    postgres_password: "random_passwors"  # Define the password for the postgres user
     pgsql_data_dir: "/var/lib/pgsql/17/data/"  # Define the PostgreSQL data directory
 
   tasks:
@@ -39,6 +39,12 @@
       ansible.builtin.yum:
         name: https://download.postgresql.org/pub/repos/yum/reporpms/EL-8-x86_64/pgdg-redhat-repo-latest.noarch.rpm
         state: present
+
+    # Disable the built-in PostgreSQL module
+    - name: Disable built-in PostgreSQL module
+      ansible.builtin.command:
+        cmd: dnf -qy module disable postgresql
+
 
     # Install both PostgreSQL 17 server and python3-psycopg2 in one task.
     - name: Install PostgreSQL 17 server and python3-psycopg2
